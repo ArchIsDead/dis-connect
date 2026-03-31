@@ -1,6 +1,6 @@
 import os
 import sys
-import time
+import asyncio
 
 class Colors:
     HEADER = '\033[95m'
@@ -12,6 +12,7 @@ class Colors:
     END = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
+    YELLOW = '\033[93m'
 
 def clear():
     os.system('clear')
@@ -26,5 +27,13 @@ ________  .__                 _________                                     __
 /_______  /__/____  >          \______  /\____/|___|  /___|  /\___  >\___  >__|  
         \/        \/                  \/            \/     \/     \/     \/      
     """ + Colors.END)
-    print(Colors.GREEN + "[" + Colors.CYAN + "Dis-Connect" + Colors.GREEN + "] Discord Bot Manager v1.0" + Colors.END)
-    print(Colors.WARNING + "=" * 50 + Colors.END + "\n")
+    print(Colors.GREEN + "[" + Colors.CYAN + "Dis-Connect" + Colors.GREEN + "] Discord Bot Stuff" + Colors.END)
+    print(Colors.YELLOW + "=" * 50 + Colors.END + "\n")
+
+async def loading_animation(text):
+    chars = "|/-\\"
+    for i in range(15):
+        sys.stdout.write(f'\r{Colors.CYAN}{text} {chars[i % len(chars)]}{Colors.END}')
+        sys.stdout.flush()
+        await asyncio.sleep(0.1)
+    sys.stdout.write('\r' + ' ' * 50 + '\r')
