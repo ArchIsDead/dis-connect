@@ -1,19 +1,21 @@
 import discord
 import asyncio
 import sys
-from utils import Colors, clear, print_ascii
+import os
+from datetime import datetime
+from utils import Colors, clear, print_ascii, loading_animation
 
-discord_token = input(Colors.CYAN + "[?] Enter Discord Bot Token: " + Colors.END)
+discord_token = input(Colors.CYAN + "Enter Discord Bot Token: " + Colors.END)
 
 class BotClient(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.current_guild = None
         self.current_channel = None
-        self.cached_messages = []
-        self.cursor_pos = 0
+        self.message_page = 0
         
     async def on_ready(self):
+        await loading_animation("Connecting to Discord")
         await self.main_menu()
     
     def clear_screen(self):
@@ -23,10 +25,19 @@ class BotClient(discord.Client):
     async def main_menu(self):
         while True:
             self.clear_screen()
-            print(Colors.GREEN + "[1]" + Colors.END + " View Servers")
-            print(Colors.GREEN + "[2]" + Colors.END + " View Direct Messages")
-            print(Colors.GREEN + "[3]" + Colors.END + " Bot Info")
-            print(Colors.RED + "[4]" + Colors.END + " Exit")
+            print(Colors.GREEN + "+" + "-" * 48 + "+" + Colors.END)
+            print(Colors.GREEN + "|" + Colors.CYAN + " " * 18 + "MAIN MENU" + " " * 24 + Colors.GREEN + "|" + Colors.END)
+            print(Colors.GREEN + "+" + "-" * 48 + "+" + Colors.END)
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "1" + Colors.END + "  Servers and Channels")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "2" + Colors.END + "  Direct Messages")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "3" + Colors.END + "  Bot Information")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "4" + Colors.END + "  User Management")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "5" + Colors.END + "  Search Messages")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "6" + Colors.END + "  Server Analytics")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "7" + Colors.END + "  Voice Channels")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.GREEN + "8" + Colors.END + "  Moderation Tools")
+            print(Colors.GREEN + "|" + Colors.END + "  " + Colors.RED + "0" + Colors.END + "  Exit")
+            print(Colors.GREEN + "+" + "-" * 48 + "+" + Colors.END)
             print()
             
             choice = input(Colors.CYAN + "Select option: " + Colors.END)
@@ -38,8 +49,18 @@ class BotClient(discord.Client):
             elif choice == "3":
                 await self.show_bot_info()
             elif choice == "4":
+                await self.user_management()
+            elif choice == "5":
+                await self.search_messages()
+            elif choice == "6":
+                await self.server_analytics()
+            elif choice == "7":
+                await self.voice_channels()
+            elif choice == "8":
+                await self.moderation_tools()
+            elif choice == "0":
                 self.clear_screen()
-                print(Colors.GREEN + "Goodbye!" + Colors.END)
+                print(Colors.GREEN + "Thank you for using Dis-Connect. Goodbye!" + Colors.END)
                 await self.close()
                 sys.exit(0)
     
@@ -47,11 +68,16 @@ class BotClient(discord.Client):
         self.clear_screen()
         servers = list(self.guilds)
         
-        for i, guild in enumerate(servers, 1):
-            print(Colors.GREEN + f"[{i}]" + Colors.END + f" {guild.name} ({guild.member_count} members)")
+        print(Colors.CYAN + "Your Servers" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
-        print(Colors.WARNING + "\n[0] Back to Main Menu" + Colors.END)
-        choice = input(Colors.CYAN + "\nSelect server: " + Colors.END)
+        for i, guild in enumerate(servers, 1):
+            online = sum(1 for m in guild.members if m.status == discord.Status.online)
+            print(f"{Colors.GREEN}[{i:2}]{Colors.END} {Colors.BOLD}{guild.name}{Colors.END}  Members: {guild.member_count}  Online: {online}")
+        
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        print(Colors.GREEN + "0" + Colors.END + " Back to Menu")
+        choice = input(Colors.CYAN + "Select server: " + Colors.END)
         
         if choice == "0":
             return
@@ -66,36 +92,55 @@ class BotClient(discord.Client):
     async def show_channels(self):
         self.clear_screen()
         print(Colors.CYAN + f"Server: {self.current_guild.name}" + Colors.END)
-        print(Colors.WARNING + "-" * 40 + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
         channels = [ch for ch in self.current_guild.text_channels if ch.permissions_for(self.current_guild.me).read_messages]
         
-        for i, channel in enumerate(channels, 1):
-            print(Colors.GREEN + f"[{i}]" + Colors.END + f" #{channel.name}")
+        categories = {}
+        for ch in channels:
+            if ch.category:
+                if ch.category.name not in categories:
+                    categories[ch.category.name] = []
+                categories[ch.category.name].append(ch)
+            else:
+                if "General" not in categories:
+                    categories["General"] = []
+                categories["General"].append(ch)
         
-        print(Colors.WARNING + "\n[0] Back" + Colors.END)
-        choice = input(Colors.CYAN + "\nSelect channel: " + Colors.END)
+        for cat_name, cat_channels in categories.items():
+            print(f"\n{Colors.BLUE}[{cat_name}]{Colors.END}")
+            for ch in cat_channels[:15]:
+                print(f"  {Colors.GREEN}#{ch.name}{Colors.END}")
         
-        if choice == "0":
+        print(Colors.WARNING + "\n" + "-" * 50 + Colors.END)
+        print(Colors.GREEN + "0" + Colors.END + " Back")
+        channel_name = input(Colors.CYAN + "Channel name: " + Colors.END)
+        
+        if channel_name == "0":
             return
-        try:
-            idx = int(choice) - 1
-            if 0 <= idx < len(channels):
-                self.current_channel = channels[idx]
+        
+        for ch in channels:
+            if ch.name.lower() == channel_name.lower():
+                self.current_channel = ch
                 await self.channel_menu()
-        except:
-            pass
+                return
+        
+        print(Colors.RED + "Channel not found" + Colors.END)
+        await asyncio.sleep(1)
     
     async def channel_menu(self):
         while True:
             self.clear_screen()
             print(Colors.CYAN + f"Channel: #{self.current_channel.name}" + Colors.END)
-            print(Colors.WARNING + "=" * 50 + Colors.END)
-            print(Colors.GREEN + "[1]" + Colors.END + " View Messages")
-            print(Colors.GREEN + "[2]" + Colors.END + " Send Message")
-            print(Colors.GREEN + "[3]" + Colors.END + " View Users")
-            print(Colors.GREEN + "[4]" + Colors.END + " Manage Roles")
-            print(Colors.RED + "[5]" + Colors.END + " Back")
+            print(Colors.WARNING + "-" * 50 + Colors.END)
+            print(Colors.GREEN + "1" + Colors.END + " View Messages")
+            print(Colors.GREEN + "2" + Colors.END + " Send Message")
+            print(Colors.GREEN + "3" + Colors.END + " Send Media")
+            print(Colors.GREEN + "4" + Colors.END + " Pin Message")
+            print(Colors.GREEN + "5" + Colors.END + " Clear Messages")
+            print(Colors.GREEN + "6" + Colors.END + " Channel Users")
+            print(Colors.GREEN + "7" + Colors.END + " Channel Info")
+            print(Colors.RED + "0" + Colors.END + " Back")
             print()
             
             choice = input(Colors.CYAN + "Select option: " + Colors.END)
@@ -105,61 +150,121 @@ class BotClient(discord.Client):
             elif choice == "2":
                 await self.send_message()
             elif choice == "3":
-                await self.view_users()
+                await self.send_media()
             elif choice == "4":
-                await self.manage_roles()
+                await self.pin_message()
             elif choice == "5":
+                await self.clear_messages()
+            elif choice == "6":
+                await self.channel_users()
+            elif choice == "7":
+                await self.channel_info()
+            elif choice == "0":
                 break
     
-    async def view_messages(self, offset=0):
-        self.clear_screen()
-        print(Colors.CYAN + f"Messages in #{self.current_channel.name}" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
-        
-        messages = []
-        async for msg in self.current_channel.history(limit=20, offset=offset):
-            messages.append(msg)
-        
-        if not messages:
-            print(Colors.RED + "No messages found" + Colors.END)
-            input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
-            return
-        
-        for i, msg in enumerate(reversed(messages)):
-            timestamp = msg.created_at.strftime("%H:%M:%S")
-            author = msg.author.name[:20]
-            content = msg.content[:50] if msg.content else "[Attachment/Embed]"
-            print(Colors.GREEN + f"[{timestamp}]" + Colors.END + f" {Colors.BOLD}{author}{Colors.END}: {content}")
+    async def view_messages(self):
+        self.message_page = 0
+        while True:
+            self.clear_screen()
+            print(Colors.CYAN + f"Channel: #{self.current_channel.name} - Page {self.message_page + 1}" + Colors.END)
+            print(Colors.WARNING + "-" * 50 + Colors.END)
             
-            if len(msg.content) > 50:
-                print(Colors.BLUE + f"  ... (continued, press 'r' to read full)" + Colors.END)
-        
-        print(Colors.WARNING + "\nCommands:" + Colors.END)
-        print("[r] Reply to message  [u] User info  [n] Next page  [b] Back")
-        
-        cmd = input(Colors.CYAN + "\n> " + Colors.END).lower()
-        
-        if cmd == "r":
-            msg_num = int(input("Message number to reply: ")) - 1
-            if 0 <= msg_num < len(messages):
-                reply_msg = input("Your reply: ")
-                await messages[msg_num].reply(reply_msg)
-                print(Colors.GREEN + "Reply sent!" + Colors.END)
-                await asyncio.sleep(1)
-                await self.view_messages(offset)
-        elif cmd == "u":
-            msg_num = int(input("Message number: ")) - 1
-            if 0 <= msg_num < len(messages):
-                await self.user_info(messages[msg_num].author)
-        elif cmd == "n":
-            await self.view_messages(offset + 20)
-        elif cmd == "b":
-            return
+            messages = []
+            async for msg in self.current_channel.history(limit=20, offset=self.message_page * 20):
+                messages.append(msg)
+            
+            if not messages:
+                print(Colors.RED + "No messages found" + Colors.END)
+                break
+            
+            for i, msg in enumerate(reversed(messages), 1):
+                timestamp = msg.created_at.strftime("%H:%M:%S")
+                author = msg.author.name[:20]
+                
+                if msg.attachments:
+                    attachment_links = [a.url for a in msg.attachments]
+                    content = f"[Media] {', '.join(attachment_links[:3])}"
+                elif msg.embeds:
+                    content = "[Embed]"
+                else:
+                    content = msg.content[:60] if msg.content else "[Empty]"
+                
+                if msg.pinned:
+                    print(f"{Colors.YELLOW}[PIN]{Colors.END} {timestamp} {Colors.GREEN}{author}{Colors.END}: {content}")
+                else:
+                    print(f"{timestamp} {Colors.CYAN}{author}{Colors.END}: {content}")
+                
+                if len(msg.content) > 60 and not msg.attachments and not msg.embeds:
+                    print(f"  {Colors.BLUE}[Continued...]{Colors.END}")
+            
+            print(Colors.WARNING + "\n" + "-" * 50 + Colors.END)
+            print("Commands: [n]ext  [p]revious  [r]eply  [u]ser  [d]elete  [m]edia  [q]uit")
+            
+            cmd = input(Colors.CYAN + "> " + Colors.END).lower()
+            
+            if cmd == "n":
+                self.message_page += 1
+            elif cmd == "p" and self.message_page > 0:
+                self.message_page -= 1
+            elif cmd == "r":
+                try:
+                    msg_num = int(input("Message number: ")) - 1
+                    if 0 <= msg_num < len(messages):
+                        reply_msg = input("Your reply: ")
+                        await messages[msg_num].reply(reply_msg)
+                        print(Colors.GREEN + "Reply sent!" + Colors.END)
+                        await asyncio.sleep(1)
+                except:
+                    pass
+            elif cmd == "u":
+                try:
+                    msg_num = int(input("Message number: ")) - 1
+                    if 0 <= msg_num < len(messages):
+                        await self.user_info(messages[msg_num].author)
+                except:
+                    pass
+            elif cmd == "d":
+                try:
+                    msg_num = int(input("Message number: ")) - 1
+                    if 0 <= msg_num < len(messages):
+                        if messages[msg_num].author.id == self.user.id:
+                            await messages[msg_num].delete()
+                            print(Colors.GREEN + "Message deleted!" + Colors.END)
+                        else:
+                            print(Colors.RED + "Can only delete your own messages" + Colors.END)
+                        await asyncio.sleep(1)
+                except:
+                    pass
+            elif cmd == "m":
+                try:
+                    msg_num = int(input("Message number: ")) - 1
+                    if 0 <= msg_num < len(messages):
+                        msg = messages[msg_num]
+                        if msg.attachments:
+                            for att in msg.attachments:
+                                print(f"\n{Colors.CYAN}Media URL: {att.url}{Colors.END}")
+                                print(f"Filename: {att.filename}")
+                                print(f"Size: {att.size} bytes")
+                        elif msg.embeds:
+                            for embed in msg.embeds:
+                                if embed.url:
+                                    print(f"\n{Colors.CYAN}Embed URL: {embed.url}{Colors.END}")
+                                if embed.image:
+                                    print(f"Image URL: {embed.image.url}")
+                                if embed.video:
+                                    print(f"Video URL: {embed.video.url}")
+                        else:
+                            print(Colors.RED + "No media found" + Colors.END)
+                        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+                except:
+                    pass
+            elif cmd == "q":
+                break
     
     async def send_message(self):
         self.clear_screen()
-        print(Colors.CYAN + f"Sending message to #{self.current_channel.name}" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
+        print(Colors.CYAN + f"Sending to #{self.current_channel.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
         message = input(Colors.GREEN + "Message: " + Colors.END)
         
@@ -170,134 +275,359 @@ class BotClient(discord.Client):
         print(Colors.GREEN + "Message sent!" + Colors.END)
         await asyncio.sleep(1)
     
-    async def view_users(self):
+    async def send_media(self):
         self.clear_screen()
-        print(Colors.CYAN + f"Users in {self.current_guild.name}" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
+        print(Colors.CYAN + f"Send Media to #{self.current_channel.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        print(Colors.BLUE + "Supported: Image URL, Video URL, or File Path" + Colors.END)
         
-        users = [member for member in self.current_guild.members]
+        media_input = input(Colors.GREEN + "Media URL or File Path: " + Colors.END)
         
-        for i, member in enumerate(users[:20], 1):
-            status = "🟢" if member.status == discord.Status.online else "🟡" if member.status == discord.Status.idle else "🔴"
-            print(f"{Colors.GREEN}[{i}]{Colors.END} {status} {member.name}")
+        if media_input.lower() == 'cancel':
+            return
         
-        print(Colors.WARNING + "\n[0] Back" + Colors.END)
-        choice = input(Colors.CYAN + "\nSelect user (or 0): " + Colors.END)
+        try:
+            if media_input.startswith('http'):
+                await self.current_channel.send(media_input)
+                print(Colors.GREEN + "Media link sent!" + Colors.END)
+            else:
+                if os.path.exists(media_input):
+                    file = discord.File(media_input)
+                    await self.current_channel.send(file=file)
+                    print(Colors.GREEN + "File sent!" + Colors.END)
+                else:
+                    print(Colors.RED + "File not found" + Colors.END)
+        except Exception as e:
+            print(Colors.RED + f"Error: {e}" + Colors.END)
         
-        if choice != "0":
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(users):
-                    await self.user_info(users[idx])
-            except:
-                pass
+        await asyncio.sleep(2)
+    
+    async def pin_message(self):
+        self.clear_screen()
+        print(Colors.CYAN + f"Pin/Unpin Message in #{self.current_channel.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        
+        messages = []
+        async for msg in self.current_channel.history(limit=10):
+            messages.append(msg)
+        
+        for i, msg in enumerate(messages, 1):
+            status = "[PINNED]" if msg.pinned else ""
+            print(f"{i}. {msg.author.name}: {msg.content[:40]} {status}")
+        
+        try:
+            choice = int(input("Message number to pin/unpin: ")) - 1
+            if 0 <= choice < len(messages):
+                msg = messages[choice]
+                if msg.pinned:
+                    await msg.unpin()
+                    print(Colors.GREEN + "Message unpinned!" + Colors.END)
+                else:
+                    await msg.pin()
+                    print(Colors.GREEN + "Message pinned!" + Colors.END)
+        except:
+            pass
+        
+        await asyncio.sleep(1)
+    
+    async def clear_messages(self):
+        self.clear_screen()
+        print(Colors.RED + "Clear Messages" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        
+        try:
+            amount = int(input("Number of messages to clear (1-100): "))
+            if 1 <= amount <= 100:
+                deleted = await self.current_channel.purge(limit=amount)
+                print(Colors.GREEN + f"Deleted {len(deleted)} messages!" + Colors.END)
+            else:
+                print(Colors.RED + "Invalid amount" + Colors.END)
+        except:
+            print(Colors.RED + "Invalid input" + Colors.END)
+        
+        await asyncio.sleep(2)
+    
+    async def channel_users(self):
+        self.clear_screen()
+        print(Colors.CYAN + f"Users in #{self.current_channel.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        
+        users = []
+        async for msg in self.current_channel.history(limit=200):
+            if msg.author not in users:
+                users.append(msg.author)
+        
+        for i, user in enumerate(users[:30], 1):
+            print(f"{Colors.GREEN}[{i}]{Colors.END} {user.name}")
+        
+        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+    
+    async def channel_info(self):
+        self.clear_screen()
+        print(Colors.CYAN + "Channel Information" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        print(f"Name: #{self.current_channel.name}")
+        print(f"ID: {self.current_channel.id}")
+        print(f"Category: {self.current_channel.category}")
+        print(f"Position: {self.current_channel.position}")
+        print(f"NSFW: {'Yes' if self.current_channel.is_nsfw() else 'No'}")
+        print(f"Created: {self.current_channel.created_at.strftime('%Y-%m-%d %H:%M')}")
+        print(f"Topic: {self.current_channel.topic or 'None'}")
+        print(f"Slowmode: {self.current_channel.slowmode_delay} seconds")
+        
+        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+    
+    async def user_management(self):
+        if not self.current_guild:
+            print(Colors.RED + "No server selected" + Colors.END)
+            await asyncio.sleep(1)
+            return
+        
+        self.clear_screen()
+        print(Colors.CYAN + f"User Management - {self.current_guild.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        
+        members = list(self.current_guild.members)
+        
+        for i, member in enumerate(members[:20], 1):
+            status = "ON" if member.status == discord.Status.online else "ID" if member.status == discord.Status.idle else "DN" if member.status == discord.Status.dnd else "OF"
+            print(f"{Colors.GREEN}[{i:2}]{Colors.END} [{status}] {member.name}")
+        
+        print(Colors.WARNING + "\n-" * 50 + Colors.END)
+        choice = input(Colors.CYAN + "Select user number: " + Colors.END)
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(members):
+                await self.user_info(members[idx])
+        except:
+            pass
     
     async def user_info(self, user):
         self.clear_screen()
-        print(Colors.CYAN + f"User Information" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
-        print(f"Name: {user.name}")
-        print(f"ID: {user.id}")
-        print(f"Status: {user.status}")
-        print(f"Created: {user.created_at.strftime('%Y-%m-%d')}")
-        if hasattr(user, 'joined_at') and user.joined_at:
-            print(f"Joined: {user.joined_at.strftime('%Y-%m-%d')}")
-        print()
-        print(Colors.GREEN + "[1]" + Colors.END + " Send DM")
-        print(Colors.GREEN + "[2]" + Colors.END + " Kick")
-        print(Colors.GREEN + "[3]" + Colors.END + " Ban")
-        print(Colors.RED + "[0]" + Colors.END + " Back")
+        print(Colors.CYAN + "User Information" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
-        choice = input(Colors.CYAN + "\nSelect option: " + Colors.END)
+        member = self.current_guild.get_member(user.id) if self.current_guild else None
+        
+        print(f"Name: {Colors.BOLD}{user.name}{Colors.END}")
+        print(f"ID: {user.id}")
+        print(f"Display Name: {user.display_name}")
+        print(f"Created: {user.created_at.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        if member:
+            print(f"Joined: {member.joined_at.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Status: {member.status}")
+            if member.activity:
+                print(f"Activity: {member.activity.name}")
+            roles = [r.name for r in member.roles[1:]]
+            if roles:
+                print(f"Roles: {', '.join(roles[:5])}")
+        
+        print(Colors.WARNING + "\n-" * 50 + Colors.END)
+        print(Colors.GREEN + "1" + Colors.END + " Send DM")
+        print(Colors.GREEN + "2" + Colors.END + " Kick")
+        print(Colors.GREEN + "3" + Colors.END + " Ban")
+        print(Colors.GREEN + "4" + Colors.END + " Timeout")
+        print(Colors.GREEN + "5" + Colors.END + " Manage Roles")
+        print(Colors.RED + "0" + Colors.END + " Back")
+        
+        choice = input(Colors.CYAN + "Option: " + Colors.END)
         
         if choice == "1":
             msg = input("DM message: ")
             await user.send(msg)
             print(Colors.GREEN + "DM sent!" + Colors.END)
-            await asyncio.sleep(1)
-        elif choice == "2" and self.current_guild:
-            try:
-                await self.current_guild.kick(user)
-                print(Colors.GREEN + "User kicked!" + Colors.END)
-            except:
-                print(Colors.RED + "Failed to kick" + Colors.END)
-            await asyncio.sleep(1)
-        elif choice == "3" and self.current_guild:
-            try:
-                await self.current_guild.ban(user)
-                print(Colors.GREEN + "User banned!" + Colors.END)
-            except:
-                print(Colors.RED + "Failed to ban" + Colors.END)
-            await asyncio.sleep(1)
+        elif choice == "2" and member:
+            reason = input("Kick reason: ")
+            await member.kick(reason=reason)
+            print(Colors.GREEN + "User kicked!" + Colors.END)
+        elif choice == "3" and member:
+            reason = input("Ban reason: ")
+            await member.ban(reason=reason)
+            print(Colors.GREEN + "User banned!" + Colors.END)
+        elif choice == "4" and member:
+            duration = int(input("Timeout duration (seconds): "))
+            await member.timeout(discord.utils.utcnow() + discord.timedelta(seconds=duration))
+            print(Colors.GREEN + f"Timed out for {duration}s!" + Colors.END)
+        elif choice == "5" and member:
+            await self.manage_user_roles(member)
+        
+        await asyncio.sleep(2)
     
-    async def manage_roles(self):
+    async def manage_user_roles(self, member):
         self.clear_screen()
-        print(Colors.CYAN + f"Roles in {self.current_guild.name}" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
+        print(Colors.CYAN + f"Manage Roles - {member.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
         roles = self.current_guild.roles[1:]
         
-        for i, role in enumerate(roles[:20], 1):
-            print(f"{Colors.GREEN}[{i}]{Colors.END} {role.name}")
+        for i, role in enumerate(roles[:15], 1):
+            has_role = "YES" if role in member.roles else "NO"
+            print(f"{Colors.GREEN}[{i}]{Colors.END} [{has_role}] {role.name}")
         
-        print(Colors.WARNING + "\n[0] Back" + Colors.END)
-        choice = input(Colors.CYAN + "\nSelect role: " + Colors.END)
-        
-        if choice != "0":
-            try:
-                idx = int(choice) - 1
-                if 0 <= idx < len(roles):
-                    await self.role_menu(roles[idx])
-            except:
-                pass
+        try:
+            choice = int(input("Select role number: ")) - 1
+            if 0 <= choice < len(roles):
+                role = roles[choice]
+                if role in member.roles:
+                    await member.remove_roles(role)
+                    print(Colors.GREEN + "Role removed!" + Colors.END)
+                else:
+                    await member.add_roles(role)
+                    print(Colors.GREEN + "Role added!" + Colors.END)
+                await asyncio.sleep(1)
+        except:
+            pass
     
-    async def role_menu(self, role):
+    async def search_messages(self):
         self.clear_screen()
-        print(Colors.CYAN + f"Managing role: {role.name}" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
-        print(Colors.GREEN + "[1]" + Colors.END + " Assign to user")
-        print(Colors.GREEN + "[2]" + Colors.END + " Remove from user")
-        print(Colors.GREEN + "[3]" + Colors.END + " View users with role")
-        print(Colors.RED + "[0]" + Colors.END + " Back")
+        print(Colors.CYAN + "Search Messages" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
-        choice = input(Colors.CYAN + "\nSelect option: " + Colors.END)
+        query = input("Search term: ")
         
-        if choice == "1" or choice == "2":
-            users = [m for m in self.current_guild.members]
-            self.clear_screen()
-            for i, user in enumerate(users[:20], 1):
-                print(f"{Colors.GREEN}[{i}]{Colors.END} {user.name}")
-            
-            user_choice = input(Colors.CYAN + "\nSelect user: " + Colors.END)
-            try:
-                idx = int(user_choice) - 1
-                if 0 <= idx < len(users):
-                    if choice == "1":
-                        await users[idx].add_roles(role)
-                        print(Colors.GREEN + "Role assigned!" + Colors.END)
-                    else:
-                        await users[idx].remove_roles(role)
-                        print(Colors.GREEN + "Role removed!" + Colors.END)
-                    await asyncio.sleep(1)
-            except:
-                pass
+        results = []
+        for guild in self.guilds[:3]:
+            for channel in guild.text_channels[:2]:
+                try:
+                    async for msg in channel.history(limit=50):
+                        if query.lower() in msg.content.lower():
+                            results.append((channel, msg))
+                            if len(results) >= 15:
+                                break
+                except:
+                    continue
+                if len(results) >= 15:
+                    break
+            if len(results) >= 15:
+                break
+        
+        if not results:
+            print(Colors.RED + "No messages found" + Colors.END)
+        else:
+            for i, (channel, msg) in enumerate(results, 1):
+                print(f"{Colors.GREEN}[{i}]{Colors.END} #{channel.name}: {msg.author.name}: {msg.content[:60]}")
+        
+        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+    
+    async def server_analytics(self):
+        if not self.current_guild:
+            print(Colors.RED + "No server selected" + Colors.END)
+            await asyncio.sleep(1)
+            return
+        
+        self.clear_screen()
+        print(Colors.CYAN + f"Server Analytics - {self.current_guild.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        
+        total = self.current_guild.member_count
+        online = sum(1 for m in self.current_guild.members if m.status == discord.Status.online)
+        idle = sum(1 for m in self.current_guild.members if m.status == discord.Status.idle)
+        dnd = sum(1 for m in self.current_guild.members if m.status == discord.Status.dnd)
+        offline = total - (online + idle + dnd)
+        
+        print(f"Total Members: {total}")
+        print(f"Online: {online}")
+        print(f"Idle: {idle}")
+        print(f"Do Not Disturb: {dnd}")
+        print(f"Offline: {offline}")
+        print(f"\nChannels: {len(self.current_guild.channels)}")
+        print(f"Text Channels: {len(self.current_guild.text_channels)}")
+        print(f"Voice Channels: {len(self.current_guild.voice_channels)}")
+        print(f"Roles: {len(self.current_guild.roles)}")
+        print(f"Created: {self.current_guild.created_at.strftime('%Y-%m-%d')}")
+        
+        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+    
+    async def voice_channels(self):
+        if not self.current_guild:
+            print(Colors.RED + "No server selected" + Colors.END)
+            await asyncio.sleep(1)
+            return
+        
+        self.clear_screen()
+        print(Colors.CYAN + f"Voice Channels - {self.current_guild.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        
+        for vc in self.current_guild.voice_channels:
+            if vc.members:
+                members = ', '.join([m.name for m in vc.members])
+                print(f"{Colors.GREEN}[{vc.name}]{Colors.END} ({len(vc.members)} users): {members}")
+            else:
+                print(f"{Colors.GREEN}[{vc.name}]{Colors.END} (Empty)")
+        
+        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+    
+    async def moderation_tools(self):
+        if not self.current_guild:
+            print(Colors.RED + "No server selected" + Colors.END)
+            await asyncio.sleep(1)
+            return
+        
+        self.clear_screen()
+        print(Colors.CYAN + f"Moderation Tools - {self.current_guild.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        print(Colors.GREEN + "1" + Colors.END + " View Bans")
+        print(Colors.GREEN + "2" + Colors.END + " Unban User")
+        print(Colors.GREEN + "3" + Colors.END + " Create Channel")
+        print(Colors.GREEN + "4" + Colors.END + " Delete Channel")
+        print(Colors.GREEN + "5" + Colors.END + " Create Role")
+        print(Colors.GREEN + "6" + Colors.END + " Server Info")
+        print(Colors.RED + "0" + Colors.END + " Back")
+        
+        choice = input(Colors.CYAN + "Option: " + Colors.END)
+        
+        if choice == "1":
+            bans = [entry async for entry in self.current_guild.bans()]
+            for ban in bans[:10]:
+                print(f"{ban.user.name}: {ban.reason or 'No reason'}")
+            input(Colors.WARNING + "\nPress Enter..." + Colors.END)
+        elif choice == "2":
+            user_id = int(input("User ID to unban: "))
+            user = await self.fetch_user(user_id)
+            await self.current_guild.unban(user)
+            print(Colors.GREEN + "User unbanned!" + Colors.END)
+            await asyncio.sleep(1)
         elif choice == "3":
-            self.clear_screen()
-            users_with_role = [m for m in self.current_guild.members if role in m.roles]
-            print(Colors.CYAN + f"Users with {role.name} role:" + Colors.END)
-            for user in users_with_role[:20]:
-                print(f"- {user.name}")
-            input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
+            name = input("Channel name: ")
+            await self.current_guild.create_text_channel(name)
+            print(Colors.GREEN + "Channel created!" + Colors.END)
+            await asyncio.sleep(1)
+        elif choice == "4":
+            channel_id = int(input("Channel ID to delete: "))
+            channel = self.current_guild.get_channel(channel_id)
+            if channel:
+                await channel.delete()
+                print(Colors.GREEN + "Channel deleted!" + Colors.END)
+            await asyncio.sleep(1)
+        elif choice == "5":
+            name = input("Role name: ")
+            await self.current_guild.create_role(name=name)
+            print(Colors.GREEN + "Role created!" + Colors.END)
+            await asyncio.sleep(1)
+        elif choice == "6":
+            await self.server_info()
+    
+    async def server_info(self):
+        self.clear_screen()
+        print(Colors.CYAN + f"Server Information - {self.current_guild.name}" + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
+        print(f"ID: {self.current_guild.id}")
+        print(f"Owner: {self.current_guild.owner}")
+        print(f"Verification Level: {self.current_guild.verification_level}")
+        print(f"Boost Level: {self.current_guild.premium_tier}")
+        print(f"Boost Count: {self.current_guild.premium_subscription_count or 0}")
+        print(f"Description: {self.current_guild.description or 'None'}")
+        
+        input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
     
     async def show_dms(self):
         self.clear_screen()
         print(Colors.CYAN + "Direct Messages" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         
-        dms = []
-        for dm in self.private_channels:
-            if isinstance(dm, discord.DMChannel):
-                dms.append(dm)
+        dms = [dm for dm in self.private_channels if isinstance(dm, discord.DMChannel)]
         
         if not dms:
             print(Colors.RED + "No DM channels found" + Colors.END)
@@ -307,7 +637,7 @@ class BotClient(discord.Client):
         for i, dm in enumerate(dms[:20], 1):
             print(f"{Colors.GREEN}[{i}]{Colors.END} {dm.recipient.name}")
         
-        choice = input(Colors.CYAN + "\nSelect DM: " + Colors.END)
+        choice = input(Colors.CYAN + "Select DM: " + Colors.END)
         try:
             idx = int(choice) - 1
             if 0 <= idx < len(dms):
@@ -319,17 +649,20 @@ class BotClient(discord.Client):
     async def show_bot_info(self):
         self.clear_screen()
         print(Colors.CYAN + "Bot Information" + Colors.END)
-        print(Colors.WARNING + "=" * 50 + Colors.END)
+        print(Colors.WARNING + "-" * 50 + Colors.END)
         print(f"Name: {self.user.name}")
         print(f"ID: {self.user.id}")
         print(f"Servers: {len(self.guilds)}")
         print(f"Total Members: {sum(g.member_count for g in self.guilds)}")
         print(f"Latency: {round(self.latency * 1000)}ms")
+        print(f"Created: {self.user.created_at.strftime('%Y-%m-%d')}")
+        
         input(Colors.WARNING + "\nPress Enter to continue..." + Colors.END)
 
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.presences = True
 
 client = BotClient(intents=intents)
 
